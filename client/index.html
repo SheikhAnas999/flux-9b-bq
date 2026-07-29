@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Real Time Virtual Try On </title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #111; color: #eee; margin: 0; padding: 24px; }
+  h1 { font-size: 18px; font-weight: 600; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+  input[type=text] { flex: 1; min-width: 320px; padding: 8px; border-radius: 6px; border: 1px solid #444; background: #1c1c1c; color: #eee; }
+  button { padding: 8px 16px; border-radius: 6px; border: 1px solid #444; background: #2a2a2a; color: #eee; cursor: pointer; }
+  button:hover { background: #333; }
+  .videos { display: flex; gap: 16px; flex-wrap: wrap; }
+  .videos div { text-align: center; }
+  video, canvas { width: 480px; max-width: 90vw; background: #000; border-radius: 8px; border: 1px solid #333; }
+  #status { font-size: 13px; color: #999; }
+  #status.connected { color: #6c6; }
+  #status.error { color: #e66; }
+</style>
+</head>
+<body>
+  <h1>Real Time Virtual Try On</h1>
+
+  <div class="row">
+    <span id="status">connecting...</span>
+  </div>
+
+  <div class="row">
+    <input id="promptInput" type="text" placeholder="Prompt, e.g. Turn this into cyberpunk neon night scene" />
+    <button id="sendPromptBtn">Send Prompt</button>
+  </div>
+
+  <div class="row">
+    <input id="refInput" type="file" accept="image/*" />
+    <button id="sendRefBtn">Send Reference Image</button>
+    <button id="clearRefBtn">Clear Reference</button>
+    <img id="refPreview" alt="" style="height:64px;border-radius:6px;border:1px solid #333;display:none;" />
+  </div>
+
+  <div class="row">
+    <span id="fps">-- fps</span>
+  </div>
+
+  <div class="videos">
+    <div>
+      <p>Webcam (input)</p>
+      <video id="webcam" autoplay playsinline muted></video>
+    </div>
+    <div>
+      <p>FluxRT output (from RunPod)</p>
+      <canvas id="output"></canvas>
+    </div>
+  </div>
+
+<script>
+// Replace <POD_ID> with your pod's ID from the RunPod console (also shown
+// in the "Connect" panel), and 8000 with whatever port you exposed for
+// server.py. Must be wss:// (not ws://) since RunPod's proxy is HTTPS-only.
+const WS_URL = "wss://yvgwcr3b6zgnuc-8000.proxy.runpod.net/stream";
+const statusEl = document.getElementById("status");
+const promptInput = document.getElementById("promptInput");
+const sendPromptBtn = document.getElementById("sendPromptBtn");
+const webcamVideo = document.getElementById("webcam");
+const outputCanvas = document.getElementById("output");
+const outCtx = outputCanvas.getContext("2d");
+const fpsEl = document.getElementById("fps");
+
+const captureCanvas = document.createElement("canvas");
+const captureCtx = captureCanvas.getContext("2d");
+
+let ws = null;
+let sendLoopHandle = null;
+let frameCount = 0;
+let lastFpsTime = performance.now();
+let waitingForResponse = false;
+
+async function startWebcam() {
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 480 }, height: { ideal: 854 } }, audio: false });
+  webcamVideo.srcObject = stream;
+  await new Promise((resolve) => (webcamVideo.onloadedmetadata = resolve));
+  captureCanvas.width = webcamVideo.videoWidth;
+  captureCanvas.height = webcamVideo.videoHeight;
+}
+
+function setStatus(text, cls) {
+  statusEl.textContent = text;
+  statusEl.className = cls || "";
+}
+
+function sendFrame() {
+  if (!ws || ws.readyState !== WebSocket.OPEN || waitingForResponse) return;
+  captureCtx.drawImage(webcamVideo, 0, 0, captureCanvas.width, captureCanvas.height);
+  captureCanvas.toBlob(
+    (blob) => {
+      if (blob && ws && ws.readyState === WebSocket.OPEN) {
+        waitingForResponse = true;
+        ws.send(blob);
+      }
+    },
+    "image/jpeg",
+    0.85
+  );
+}
+
+function connect() {
+  setStatus("connecting...");
+  ws = new WebSocket(WS_URL);
+  ws.binaryType = "arraybuffer";
+
+  ws.onopen = () => {
+    setStatus("connected", "connected");
+    sendLoopHandle = setInterval(sendFrame, 1000 / 15); // client-paced at 15fps request rate
+  };
+
+  ws.onclose = () => {
+    setStatus("disconnected — retrying in 5s");
+    if (sendLoopHandle) clearInterval(sendLoopHandle);
+    waitingForResponse = false;
+    setTimeout(connect, 5000);
+  };
+
+  ws.onerror = () => {
+    setStatus("error", "error");
+  };
+
+  ws.onmessage = (event) => {
+    waitingForResponse = false;
+    const blob = new Blob([event.data], { type: "image/jpeg" });
+    const img = new Image();
+    img.onload = () => {
+      outputCanvas.width = img.width;
+      outputCanvas.height = img.height;
+      outCtx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(img.src);
+
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        fpsEl.textContent = `${frameCount} fps (round-trip)`;
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+    };
+    img.src = URL.createObjectURL(blob);
+  };
+}
+
+sendPromptBtn.addEventListener("click", () => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    alert("Not connected yet.");
+    return;
+  }
+  ws.send(JSON.stringify({ type: "prompt", value: promptInput.value }));
+});
+
+const refInput = document.getElementById("refInput");
+const sendRefBtn = document.getElementById("sendRefBtn");
+const clearRefBtn = document.getElementById("clearRefBtn");
+const refPreview = document.getElementById("refPreview");
+
+sendRefBtn.addEventListener("click", () => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    alert("Not connected yet.");
+    return;
+  }
+  const file = refInput.files && refInput.files[0];
+  if (!file) {
+    alert("Choose an image file first.");
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const base64 = reader.result.split(",")[1];
+    ws.send(JSON.stringify({ type: "reference", data: base64 }));
+    refPreview.src = reader.result;
+    refPreview.style.display = "inline";
+  };
+  reader.readAsDataURL(file);
+});
+
+clearRefBtn.addEventListener("click", () => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    alert("Not connected yet.");
+    return;
+  }
+  ws.send(JSON.stringify({ type: "reference", data: null }));
+  refPreview.style.display = "none";
+});
+
+startWebcam()
+  .then(connect)
+  .catch((err) => {
+    setStatus("webcam error: " + err.message, "error");
+  });
+</script>
+</body>
+</html>
