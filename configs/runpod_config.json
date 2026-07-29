@@ -13,6 +13,7 @@
     "enable_tiny_vae": true,
     "enable_flow_upscaler": true,
     "enable_int8_quantization": false,
+    "offload_text_encoder": true,
     "target_fps": null,
     "interpolation_exp": 2,
     "use_reference_image": true,

@@ -83,9 +83,10 @@ class ModelInferenceSubprocess:
             f"{models_path}/transformer", local_files_only=True, device=device
         ).to(dtype)
 
+        text_encoder_device = "cpu" if self.config.get("offload_text_encoder", False) else device
         self.text_encoder = Qwen3ForCausalLM.from_pretrained(
             f"{models_path}/text_encoder", local_files_only=True
-        ).to(device, dtype)
+        ).to(text_encoder_device, dtype)
         self.tokenizer = Qwen2TokenizerFast.from_pretrained(
             f"{models_path}/tokenizer", local_files_only=True, device=device
         )
@@ -126,7 +127,8 @@ class ModelInferenceSubprocess:
         state_dict = load_file(f"{int8_models_path}/text_encoder/model.safetensors")
         requantize(text_encoder, state_dict=state_dict, quantization_map=qmap)
         text_encoder.eval()
-        text_encoder.to(self.device, dtype=self.dtype)
+        text_encoder_device = "cpu" if self.config.get("offload_text_encoder", False) else self.device
+        text_encoder.to(text_encoder_device, dtype=self.dtype)
         self.text_encoder = text_encoder
 
         self.tokenizer = Qwen2TokenizerFast.from_pretrained(
@@ -220,6 +222,14 @@ class ModelInferenceSubprocess:
             )
 
     def update_prompt_embeds(self, prompt):
+        offload_text_encoder = self.config.get("offload_text_encoder", False)
+
+        if offload_text_encoder:
+            t0 = time.time()
+            self.text_encoder.to(self.device)
+            torch.cuda.synchronize()
+            print(f"[offload] text_encoder -> cuda: {time.time() - t0:.2f}s")
+
         self.prompt_embeds, text_ids = self.pipe.encode_prompt(
             prompt=prompt,
             device=self.device,
@@ -228,6 +238,13 @@ class ModelInferenceSubprocess:
             text_encoder_out_layers=(9, 18, 27),
         )
         self.update_controller.reset_cache()
+
+        if offload_text_encoder:
+            t0 = time.time()
+            self.text_encoder.to("cpu")
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+            print(f"[offload] text_encoder -> cpu: {time.time() - t0:.2f}s")
 
     def init_shared_tensors(self):
         height, width = self.resolution["height"], self.resolution["width"]
