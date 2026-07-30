@@ -498,6 +498,7 @@ class Flux2KleinPipeline(DiffusionPipeline, Flux2LoraLoaderMixin):
 
         return torch.stack(x_list, dim=0)
 
+    @torch.no_grad()
     def encode_prompt(
         self,
         prompt: str | list[str],
