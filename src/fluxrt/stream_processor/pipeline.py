@@ -675,6 +675,18 @@ class Flux2KleinPipeline(DiffusionPipeline, Flux2LoraLoaderMixin):
             )
 
     @property
+    def device(self) -> torch.device:
+        # The base DiffusionPipeline.device property picks the first nn.Module
+        # component in alphabetical signature order ("text_encoder" beats
+        # "tokenizer"/"transformer"/"vae"; "scheduler" isn't an nn.Module). With
+        # offload_text_encoder enabled, text_encoder legitimately rests on CPU
+        # between prompt updates, which would make self.device (and
+        # self._execution_device, which falls back to it) resolve to "cpu" for
+        # the whole pipeline call. transformer is never offloaded, so anchor on
+        # it instead.
+        return self.transformer.device
+
+    @property
     def guidance_scale(self):
         return self._guidance_scale
 
