@@ -118,7 +118,7 @@ class UpdateController:
         difference_mask = torch.max_pool2d(
             difference, (self.compression_ratio, self.compression_ratio)
         )
-        difference_mask = difference_mask > 0.1
+        difference_mask = difference_mask > 0.3
         difference_mask_dilated = (
             FF.max_pool2d(difference_mask.float(), kernel_size=3, stride=1, padding=1)
             > 0
