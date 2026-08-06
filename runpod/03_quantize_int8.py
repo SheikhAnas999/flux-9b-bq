@@ -1,5 +1,5 @@
 """
-One-time (idempotent) fp8 quantization of the FLUX.2-klein-9B transformer +
+One-time (idempotent) int8 quantization of the FLUX.2-klein-9B transformer +
 text encoder, producing a checkpoint in the exact layout
 `StreamProcessor.load_quantized_models()` expects. This is what makes 9B fit
 on a 24GB card (e.g. RTX 3090) instead of needing an 80GB H100/A100.
@@ -9,7 +9,7 @@ weights already on the network volume).
 
 Usage:
     source /workspace/venv/bin/activate
-    python runpod/03_quantize_fp8.py
+    python runpod/03_quantize_int8.py
 
 Notes:
   - Transformer and text encoder are quantized SEQUENTIALLY, each loaded
@@ -22,7 +22,7 @@ Notes:
     original bf16 models_path regardless of enable_int8_quantization. A
     quantized VAE would just be dead weight on disk.
   - Output layout (all paths relative to WEIGHTS_DIR):
-      FLUX.2-klein-9B-fp8/
+      FLUX.2-klein-9B-int8/
       ├── config.json                          (transformer config, flat)
       ├── diffusion_pytorch_model.safetensors   (quantized transformer, flat)
       ├── quanto_qmap.json                      (transformer quant map, flat)
@@ -43,7 +43,7 @@ import sys
 APP_DIR = "/workspace/flux-9b-bq"
 WEIGHTS_DIR = "/workspace/weights"
 MODELS_PATH = f"{WEIGHTS_DIR}/FLUX.2-klein-9B"
-OUT_DIR = f"{WEIGHTS_DIR}/FLUX.2-klein-9B-fp8"
+OUT_DIR = f"{WEIGHTS_DIR}/FLUX.2-klein-9B-int8"
 
 # fluxrt isn't pip-installed -- same sys.path trick server.py / modal_app.py use.
 sys.path.insert(0, f"{APP_DIR}/src")
@@ -54,7 +54,7 @@ if not os.path.isdir(MODELS_PATH):
     )
 
 import torch  # noqa: E402
-from optimum.quanto import qfloat8, quantize, freeze, quantization_map  # noqa: E402
+from optimum.quanto import qint8, quantize, freeze, quantization_map  # noqa: E402
 
 
 def quantize_transformer():
@@ -74,8 +74,8 @@ def quantize_transformer():
     ).to("cuda", torch.bfloat16)
 
     print(f"Peak VRAM before quantize: {torch.cuda.memory_allocated() / 1e9:.1f} GB")
-    print("Quantizing transformer to fp8 (weights-only, no calibration needed)...")
-    qmodel = QuantizedFlux2Transformer2DModel.quantize(transformer, weights=qfloat8)
+    print("Quantizing transformer to int8 (weights-only, no calibration needed)...")
+    qmodel = QuantizedFlux2Transformer2DModel.quantize(transformer, weights=qint8)
 
     os.makedirs(OUT_DIR, exist_ok=True)
     print(f"Saving to {OUT_DIR} ...")
@@ -101,8 +101,8 @@ def quantize_text_encoder():
     ).to("cuda", torch.bfloat16)
 
     print(f"Peak VRAM before quantize: {torch.cuda.memory_allocated() / 1e9:.1f} GB")
-    print("Quantizing text encoder to fp8...")
-    quantize(text_encoder, weights=qfloat8)
+    print("Quantizing text encoder to int8...")
+    quantize(text_encoder, weights=qint8)
     freeze(text_encoder)
 
     os.makedirs(te_dir, exist_ok=True)
@@ -142,9 +142,9 @@ if __name__ == "__main__":
     quantize_text_encoder()
     copy_tokenizer()
 
-    print(f"\nAll done. fp8 checkpoint is at {OUT_DIR}")
+    print(f"\nAll done. int8 checkpoint is at {OUT_DIR}")
     print("Now set in your config:")
-    print(f'  "int8_models_path": "FLUX.2-klein-9B-fp8"')
+    print(f'  "int8_models_path": "FLUX.2-klein-9B-int8"')
     print('  "enable_int8_quantization": true')
     print("\nNote: VAE and scheduler are NOT part of this checkpoint -- they")
     print("always load from the original bf16 FLUX.2-klein-9B/{vae,scheduler}")

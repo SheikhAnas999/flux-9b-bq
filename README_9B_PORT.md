@@ -87,8 +87,12 @@ in update_controller.py so fewer tokens recompute per frame.
 
 ## Known gaps
 
-- No fp8/int8 path for 9B in this repo. For a 32 GB consumer card, export
-  your own optimum-quanto int8 (the 4B recipe in quantized_flux2.py shows
-  the exact pattern).
+- The published quanto int8 checkpoint (`aydin99/FLUX.2-klein-4B-int8`) only
+  ever targeted 4B. For 9B, use `runpod/03_quantize_int8.py` to produce your
+  own int8 checkpoint (weights-only `optimum-quanto` quantization, no
+  calibration needed) -- this is what makes 9B fit on a 24 GB consumer card
+  instead of needing an 80 GB H100/A100. Point `int8_models_path` at the
+  resulting `FLUX.2-klein-9B-int8` directory and set
+  `enable_int8_quantization: true`.
 - License: 9B checkpoints are FLUX Non-Commercial. Research/personal use ok;
   commercial use needs a BFL license.

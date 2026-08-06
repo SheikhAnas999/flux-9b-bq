@@ -92,10 +92,10 @@ class ModelInferenceSubprocess:
         )
 
     def load_quantized_models(self):
-        # NOTE (9B port, fp8 self-quantized): the published quanto checkpoint
+        # NOTE (9B port, int8 self-quantized): the published quanto checkpoint
         # (aydin99/FLUX.2-klein-4B-int8) only ever targeted the 4B model. For
         # 9B, int8_models_path is expected to point at a checkpoint you
-        # produced yourself with runpod/03_quantize_fp8.py, in the exact
+        # produced yourself with runpod/03_quantize_int8.py, in the exact
         # layout that script writes out. Everything below is unchanged from
         # the original 4B loading path -- it's generic over checkpoint size.
         from optimum.quanto import requantize

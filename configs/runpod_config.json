@@ -3,7 +3,7 @@
     "default_steps": 2,
     "default_seed": 52,
     "models_path": "FLUX.2-klein-9B",
-    "int8_models_path": "FLUX.2-klein-9B-fp8",
+    "int8_models_path": "FLUX.2-klein-9B-int8",
     "resolution": {
         "height": 640,
         "width": 368
